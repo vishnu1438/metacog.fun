@@ -1,6 +1,20 @@
-backend/.env
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
 venv/
 .venv/
-__pycache__/
-*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
 .DS_Store
+Thumbs.db
