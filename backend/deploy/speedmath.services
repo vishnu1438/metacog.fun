@@ -1,0 +1,17 @@
+# /etc/systemd/system/speedmath.service
+# After copying: sudo systemctl daemon-reload && sudo systemctl enable --now speedmath
+
+[Unit]
+Description=Speed Math Flask backend (gunicorn)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/var/www/speedmath/backend
+EnvironmentFile=/var/www/speedmath/backend/.env
+ExecStart=/var/www/speedmath/backend/venv/bin/gunicorn -w 2 -b 127.0.0.1:8000 app:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

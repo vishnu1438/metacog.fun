@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speed Math | Brain Teasers</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <main class="card" id="setup-screen">
+    <!-- <p class="eyebrow">Brain Teasers</p> -->
+    <h1>Speed Math</h1>
+    <!-- <p class="subtitle">Solve as many as you can. No Enter key needed — get it right and it jumps straight to the next one.</p> -->
+
+    <label for="duration">Game duration (seconds)</label>
+    <input type="number" id="duration" min="10" max="600" value="60">
+
+    <button id="start-btn">Start Game</button>
+    <p class="hint" id="setup-error"></p>
+  </main>
+
+  <main class="card hidden" id="game-screen">
+    <div class="topbar">
+      <span id="score">Score: 0</span>
+      <span id="timer" class="hidden">0.0s</span>
+    </div>
+
+    <div class="question" id="question-text">Loading...</div>
+
+    <input
+      type="text"
+      id="answer-input"
+      inputmode="numeric"
+      autocomplete="off"
+      placeholder="Type the answer"
+      disabled
+    >
+
+    <p class="flash" id="flash-msg"></p>
+    <button id="stop-btn" class="secondary">Stop</button>
+  </main>
+
+  <main class="card hidden" id="results-screen">
+    <!-- <p class="eyebrow">Session complete</p> -->
+    <h1 id="final-score">0 correct</h1>
+    <p class="subtitle" id="final-time"></p>
+    <button id="restart-btn">Play Again</button>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
