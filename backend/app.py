@@ -1,19 +1,24 @@
 """
 Speed Math - Backend
 ---------------------
-Small Flask API that generates arithmetic questions (add / subtract / multiply,
-operands between 2-100) using the Google Gemini API. If Gemini is unavailable
-(no key, rate limit, network error, bad response) it falls back to generating
-the question locally with Python's `random`, so the game never breaks.
+Small Flask API that generates arithmetic questions (add / subtract / multiply).
+
+By default questions are generated locally with Python's `random` (instant,
+free, never fails). Optionally, set USE_GEMINI=true and GEMINI_API_KEY in .env
+to have the Google Gemini API generate them instead. If Gemini is enabled but
+fails (rate limit, network error, bad response) the app silently falls back to
+local generation, so the game never breaks.
 
 Endpoints:
-    GET  /api/health            -> simple health check
-    GET  /api/question          -> {"question": "23 + 45", "answer": 68, "source": "gemini"}
+    GET  /api/health     -> simple health check
+    GET  /api/question   -> {"question": "23 + 45", "answer": 68, "source": "local"}
 
-Run:
+Local dev:
     pip install -r requirements.txt
-    cp .env.example .env        # then add your GEMINI_API_KEY
+    cp .env.example .env
     python app.py
+
+Production: gunicorn imports this file (see deploy/speedmath.service).
 """
 
 import os
@@ -28,6 +33,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 load_dotenv()
 
@@ -36,25 +42,43 @@ log = logging.getLogger("speed-math")
 
 app = Flask(__name__)
 
-# In production, lock CORS down to your real frontend origin(s) via env var,
-# e.g. ALLOWED_ORIGINS=https://speedmath.com,https://www.speedmath.com
-# Defaults to "*" only for local dev convenience.
-_allowed = os.getenv("ALLOWED_ORIGINS", "*")
-CORS(app, origins=_allowed.split(",") if _allowed != "*" else "*")
+# We run behind Nginx. Without this, every visitor appears to come from
+# 127.0.0.1 and would share ONE rate-limit bucket. Trust exactly one proxy hop.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-# Rate limit: this endpoint can trigger a paid Gemini API call, so it needs a
-# ceiling regardless of traffic size — a handful of bots hammering it is the
-# actual cost risk, not real users. 30/min and 300/day is generous for a
-# single-player game but blocks casual abuse/scripts.
-limiter = Limiter(get_remote_address, app=app, default_limits=[])
+# In production the frontend and API share one domain (Nginx proxies /api),
+# so CORS is not needed and stays OFF unless ALLOWED_ORIGINS is set.
+# Local dev (frontend on another port): set ALLOWED_ORIGINS=* in your .env.
+_allowed = os.getenv("ALLOWED_ORIGINS", "").strip()
+if _allowed == "*":
+    CORS(app, origins="*")
+elif _allowed:
+    CORS(app, origins=[o.strip() for o in _allowed.split(",") if o.strip()])
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# Rate limit per client IP. Memory storage is fine for a single gunicorn worker
+# (the service runs 1 worker + threads, so counts are accurate).
+# Limits are generous enough for a fast player (~1 question/second).
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
+
+@app.errorhandler(429)
+def too_many_requests(_exc):
+    return jsonify({"error": "rate_limited"}), 429
+
+
+USE_GEMINI = os.getenv("USE_GEMINI", "false").strip().lower() in ("1", "true", "yes", "on")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+GEMINI_TIMEOUT = float(os.getenv("GEMINI_TIMEOUT", "4"))
 
 MIN_NUM, MAX_NUM = 2, 100
-# Multiplication uses a narrower range for both operands (like classic
-# "times tables" drills) so the products stay reasonable to compute fast.
+# Multiplication uses a narrower range (like classic times-table drills).
 MULT_MIN, MULT_MAX = 2, 12
 OPERATIONS = ["+", "-", "*"]
 
@@ -74,15 +98,18 @@ SYSTEM_PROMPT = (
 )
 
 
-def _local_fallback_question():
-    """Generate a question locally if Gemini can't be reached."""
+def _gemini_enabled():
+    return USE_GEMINI and bool(GEMINI_API_KEY)
+
+
+def _local_question():
+    """Generate a question locally (default path, and Gemini fallback)."""
     op = random.choice(OPERATIONS)
 
     if op == "*":
         num1 = random.randint(MULT_MIN, MULT_MAX)
         num2 = random.randint(MULT_MIN, MULT_MAX)
-        answer = num1 * num2
-        return num1, num2, op, answer
+        return num1, num2, op, num1 * num2
 
     num1 = random.randint(MIN_NUM, MAX_NUM)
     num2 = random.randint(MIN_NUM, MAX_NUM)
@@ -96,32 +123,34 @@ def _local_fallback_question():
 
 def _ask_gemini():
     """Call Gemini and return (num1, num2, operator, answer) or raise on any problem."""
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY not set")
-
     payload = {
         "contents": [{"role": "user", "parts": [{"text": SYSTEM_PROMPT}]}],
         "generationConfig": {
             "temperature": 1.0,
-            "maxOutputTokens": 100,
+            # 2.5 models spend output tokens on "thinking" by default, which
+            # with a tiny limit can leave an empty reply. Turn thinking off
+            # and leave headroom.
+            "maxOutputTokens": 256,
+            "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
     headers = {"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY}
 
-    resp = requests.post(GEMINI_URL, headers=headers, json=payload, timeout=8)
+    resp = requests.post(GEMINI_URL, headers=headers, json=payload, timeout=GEMINI_TIMEOUT)
     resp.raise_for_status()
     data = resp.json()
 
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    parts = data["candidates"][0]["content"]["parts"]
+    text = "".join(p.get("text", "") for p in parts)
     # Strip accidental ```json fences just in case the model adds them
     text = re.sub(r"```json|```", "", text).strip()
     parsed = json.loads(text)
 
     num1, num2 = int(parsed["num1"]), int(parsed["num2"])
     operator = parsed["operator"]
-    answer = int(parsed["answer"])
 
-    # Validate against our own rules — never trust the model blindly
+    # Validate against our own rules - never trust the model blindly
     if operator not in OPERATIONS:
         raise ValueError("bad operator from model")
 
@@ -134,43 +163,46 @@ def _ask_gemini():
         if operator == "-" and num2 > num1:
             num1, num2 = num2, num1
 
-    correct = {"+": num1 + num2, "-": num1 - num2, "*": num1 * num2}[operator]
-    if answer != correct:
-        answer = correct  # trust our own arithmetic over the model's
-
+    # Always compute the answer ourselves.
+    answer = {"+": num1 + num2, "-": num1 - num2, "*": num1 * num2}[operator]
     return num1, num2, operator, answer
 
 
 @app.route("/api/health")
 def health():
-    return jsonify({"status": "ok", "gemini_configured": bool(GEMINI_API_KEY)})
+    return jsonify({"status": "ok", "gemini_enabled": _gemini_enabled()})
 
 
 @app.route("/api/question")
-@limiter.limit("30 per minute;300 per day")
+@limiter.limit("120 per minute;3000 per day")
 def question():
-    source = "gemini"
-    try:
-        num1, num2, op, answer = _ask_gemini()
-    except Exception as exc:  # noqa: BLE001 - any failure falls back, game must keep working
-        log.warning("Gemini generation failed, using local fallback: %s", exc)
-        num1, num2, op, answer = _local_fallback_question()
-        source = "fallback"
+    if _gemini_enabled():
+        try:
+            num1, num2, op, answer = _ask_gemini()
+            source = "gemini"
+        except Exception as exc:  # noqa: BLE001 - any failure falls back
+            log.warning("Gemini generation failed, using local fallback: %s", exc)
+            num1, num2, op, answer = _local_question()
+            source = "fallback"
+    else:
+        num1, num2, op, answer = _local_question()
+        source = "local"
 
-    display_op = "×" if op == "*" else op
-    return jsonify(
+    display_op = "\u00d7" if op == "*" else op
+    resp = jsonify(
         {
             "question": f"{num1} {display_op} {num2}",
             "answer": answer,
             "source": source,
         }
     )
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 if __name__ == "__main__":
-    # This block only runs "python app.py" (local dev). In production this
-    # file is imported by gunicorn instead, so debug/host/port here don't
-    # matter for the deployed app — see gunicorn command in the deploy notes.
+    # Only used by "python app.py" (local dev). In production gunicorn imports
+    # `app` from this file, so this block is skipped.
     debug_mode = os.getenv("FLASK_DEBUG", "0") == "1"
     port = int(os.getenv("PORT", 5000))
     app.run(debug=debug_mode, host="127.0.0.1", port=port)

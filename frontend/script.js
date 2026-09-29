@@ -1,8 +1,9 @@
-// In production, Nginx reverse-proxies /api/* on this same domain to the
-// Flask backend (see deploy notes), so a relative path just works and there's
-// no CORS to configure. For local dev without Nginx, run the backend on
-// :5000 and temporarily set this to "http://127.0.0.1:5000" instead.
-const API_BASE = "";
+// In production, Nginx reverse-proxies /api/* on the same domain to the Flask
+// backend, so a relative path just works (no CORS). When you open the page from
+// localhost / 127.0.0.1 (local dev), talk to the Flask dev server on :5000
+// instead - set ALLOWED_ORIGINS=* in backend/.env for that.
+const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
+const API_BASE = IS_LOCAL && location.port !== "5000" ? "http://127.0.0.1:5000" : "";
 
 const el = (id) => document.getElementById(id);
 
@@ -34,28 +35,67 @@ let timeRemaining = 60;
 let timerInterval = null;
 let running = false;
 
+let prefetched = null; // Promise for the NEXT question, fetched in the background
+let requestId = 0; // invalidates in-flight loads when the game ends/restarts
+let retryTimer = null;
+
 function showScreen(name) {
   Object.values(screens).forEach((s) => s.classList.add("hidden"));
   screens[name].classList.remove("hidden");
 }
 
-async function fetchQuestion() {
-  questionText.textContent = "Loading...";
-  answerInput.disabled = true;
-  try {
-    const res = await fetch(`${API_BASE}/api/question`);
-    if (!res.ok) throw new Error("Bad response from server");
-    const data = await res.json();
-    currentAnswer = data.answer;
-    questionText.textContent = data.question;
-    answerInput.disabled = false;
-    answerInput.value = "";
-    answerInput.classList.remove("correct", "wrong");
-    answerInput.focus();
-  } catch (err) {
-    questionText.textContent = "Couldn't reach the server";
-    flashMsg.textContent = "Check that the backend is running on port 5000.";
+async function requestQuestion() {
+  const res = await fetch(`${API_BASE}/api/question`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (typeof data.answer !== "number" || typeof data.question !== "string") {
+    throw new Error("Malformed response");
   }
+  return data;
+}
+
+// Fetch the next question while the player is still solving the current one,
+// so there is no waiting between questions.
+function prefetchNext() {
+  prefetched = requestQuestion().catch(() => null);
+}
+
+async function loadQuestion() {
+  const myId = ++requestId;
+  clearTimeout(retryTimer);
+  answerInput.disabled = true;
+
+  let data = null;
+  if (prefetched) {
+    data = await prefetched;
+    prefetched = null;
+  }
+  if (!running || myId !== requestId) return;
+
+  if (!data) {
+    questionText.textContent = "Loading...";
+    try {
+      data = await requestQuestion();
+    } catch (err) {
+      if (!running || myId !== requestId) return;
+      questionText.textContent = "Couldn't reach the server";
+      flashMsg.classList.remove("good");
+      flashMsg.textContent = "Retrying...";
+      retryTimer = setTimeout(loadQuestion, 1500);
+      return;
+    }
+    if (!running || myId !== requestId) return;
+  }
+
+  currentAnswer = data.answer;
+  questionText.textContent = data.question;
+  if (flashMsg.textContent === "Retrying...") flashMsg.textContent = "";
+  answerInput.disabled = false;
+  answerInput.value = "";
+  answerInput.classList.remove("correct", "wrong");
+  answerInput.focus();
+
+  prefetchNext();
 }
 
 function startTimer() {
@@ -82,6 +122,14 @@ function handleInput() {
   const raw = answerInput.value.trim();
   if (raw === "") return;
 
+  if (!/^\d+$/.test(raw)) {
+    answerInput.classList.add("wrong");
+    answerInput.classList.remove("correct");
+    flashMsg.classList.remove("good");
+    flashMsg.textContent = "Digits only.";
+    return;
+  }
+
   const typed = Number(raw);
 
   if (typed === currentAnswer) {
@@ -92,16 +140,16 @@ function handleInput() {
     answerInput.classList.add("correct");
     flashMsg.textContent = "Correct!";
     flashMsg.classList.add("good");
-    fetchQuestion();
+    loadQuestion();
     return;
   }
 
   // Wrong so far: only flag it once they've typed as many digits as the
   // answer has (so we don't flash red while they're mid-way through typing).
-  if (raw.replace("-", "").length >= String(currentAnswer).length) {
+  if (raw.length >= String(currentAnswer).length) {
     answerInput.classList.add("wrong");
     answerInput.classList.remove("correct");
-    flashMsg.textContent = "Not quite — keep trying.";
+    flashMsg.textContent = "Not quite - keep trying.";
     flashMsg.classList.remove("good");
   } else {
     answerInput.classList.remove("wrong");
@@ -112,16 +160,21 @@ function beginGame() {
   score = 0;
   scoreEl.textContent = "Score: 0";
   flashMsg.textContent = "";
+  flashMsg.classList.remove("good");
   running = true;
+  prefetched = null;
   timeRemaining = gameDuration;
   showScreen("game");
   startTimer();
-  fetchQuestion();
+  loadQuestion();
 }
 
 function endGame() {
   if (!running) return; // avoid double-firing (manual Stop + timer hitting 0)
   running = false;
+  requestId++; // cancel any in-flight question load
+  clearTimeout(retryTimer);
+  prefetched = null;
   stopTimer();
   answerInput.disabled = true;
   finalScore.textContent = `${score} points`;

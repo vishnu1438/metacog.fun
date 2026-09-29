@@ -36,6 +36,17 @@ body {
 
 .hidden { display: none; }
 
+.back {
+  display: block;
+  text-align: left;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  margin-bottom: 18px;
+}
+
+.back:hover { color: var(--text); }
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 2px;

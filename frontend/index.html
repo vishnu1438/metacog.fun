@@ -4,14 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Speed Math | Brain Teasers</title>
+<meta name="description" content="Speed Math - solve as many arithmetic questions as you can before time runs out.">
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
   <main class="card" id="setup-screen">
-    <!-- <p class="eyebrow">Brain Teasers</p> -->
+    <a class="back" href="home.html">&larr; All games</a>
     <h1>Speed Math</h1>
-    <!-- <p class="subtitle">Solve as many as you can. No Enter key needed — get it right and it jumps straight to the next one.</p> -->
 
     <label for="duration">Game duration (seconds)</label>
     <input type="number" id="duration" min="10" max="600" value="60">
@@ -42,7 +43,6 @@
   </main>
 
   <main class="card hidden" id="results-screen">
-    <!-- <p class="eyebrow">Session complete</p> -->
     <h1 id="final-score">0 correct</h1>
     <p class="subtitle" id="final-time"></p>
     <button id="restart-btn">Play Again</button>
