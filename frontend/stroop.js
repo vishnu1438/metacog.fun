@@ -128,11 +128,12 @@
   /* ------------------------------ styles ------------------------------ */
   const style = document.createElement("style");
   style.textContent = `
-  #stroop-root{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+  #stroop-root,#stroop-root *{box-sizing:border-box}
+  #stroop-root{width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f2f2f2;
     background:radial-gradient(circle at top,#1a1a1a,#000)}
-  #stroop-root .cc-card{width:100%;max-width:460px;background:#121212;border:1px solid #2c2c2c;border-radius:18px;
-    padding:32px 28px;box-shadow:0 20px 50px rgba(0,0,0,.6);text-align:center}
+  #stroop-root .cc-card{width:min(420px,100%);flex:0 0 auto;background:#121212;border:1px solid #2c2c2c;border-radius:18px;
+    padding:36px 32px;box-shadow:0 20px 50px rgba(0,0,0,.6);text-align:center}
   #stroop-root h1{margin:0 0 8px;font-size:26px}
   #stroop-root h2{margin:0 0 14px;font-size:22px}
   #stroop-root .muted{color:#8a8a8a;font-size:14px}
@@ -193,8 +194,8 @@
     let body;
     if (level === "hard") {
       body = `<p><b>The rule changes between questions.</b> Read the instruction above the word every time.</p>
-        <p>${'<span class="muted">SELECT THE INK COLOR</span>'} — ${swatch("RED").replace(COLORS.RED, COLORS.BLUE)} shown in blue → choose <b style="color:${COLORS.BLUE}">BLUE</b></p>
-        <p>${'<span class="muted">SELECT THE WORD</span>'} — same word → choose <b>RED</b></p>`;
+        <p><span class="muted">SELECT THE INK COLOR</span> — <span style="color:${COLORS.BLUE};font-weight:800">RED</span> shown in blue → choose <b style="color:${COLORS.BLUE}">BLUE</b></p>
+        <p><span class="muted">SELECT THE WORD</span> — same word → choose <b>RED</b></p>`;
     } else {
       body = `<p><b>Look at the COLOR of the word, not the word itself.</b></p>
         <p>Example: <span style="color:${COLORS.BLUE};font-weight:800">RED</span> — the word says RED, but the ink is BLUE. Select <b style="color:${COLORS.BLUE}">BLUE</b>.</p>

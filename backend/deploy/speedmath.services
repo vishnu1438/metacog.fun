@@ -1,8 +1,10 @@
 # /etc/systemd/system/speedmath.service
 # (the file MUST end in .service, not .services)
+
 # Install:
 #   sudo cp speedmath.service /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now speedmath
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now speedmath
 
 [Unit]
 Description=Speed Math Flask backend (gunicorn)
@@ -11,18 +13,23 @@ After=network.target
 [Service]
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/var/www/speedmath/backend
-EnvironmentFile=/var/www/speedmath/backend/.env
-# 1 worker + 4 threads: light on RAM (good for a 1 GB server) and keeps the
-# in-memory rate limiter accurate.
-ExecStart=/var/www/speedmath/backend/venv/bin/gunicorn \
+
+WorkingDirectory=/var/www/metacog/backend
+
+EnvironmentFile=/var/www/metacog/backend/.env
+
+# 1 worker + 4 threads: light on RAM (good for a 1 GB server)
+# and keeps the in-memory rate limiter accurate.
+ExecStart=/var/www/metacog/backend/venv/bin/gunicorn \
     --workers 1 --threads 4 \
     --bind 127.0.0.1:8000 \
     --timeout 30 \
     --access-logfile - --error-logfile - \
     app:app
+
 Restart=always
 RestartSec=3
+
 NoNewPrivileges=true
 PrivateTmp=true
 

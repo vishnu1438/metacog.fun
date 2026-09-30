@@ -1,10 +1,17 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
+
 <meta charset="UTF-8">
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Brain Teasers</title>
+
 <style>
+
   :root {
     --bg: #000000;
     --tile: #1a1a1a;
@@ -26,6 +33,7 @@
 
   /* Grid of game tiles. Add more <a class="tile"> items here later —
      three fit per row on a normal-width screen, and it wraps automatically. */
+
   .tile-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -61,31 +69,53 @@
   a.tile:active {
     transform: translateY(0);
   }
+
 </style>
+
 </head>
+
 <body>
 
   <div class="tile-grid" id="tile-grid">
+
     <!-- Same-tab navigation (no target="_blank"). Copy this <a> block to add more games later. -->
-    <a class="tile" href="index.html">Speed Math</a>
-    <a class="tile" href="home.html?game=cognitive-clash">Cognitive Clash</a>
+
+    <a class="tile" href="/speed-math">Speed Math</a>
+
+    <a class="tile" href="/cognitive-test">Cognitive Clash</a>
+
   </div>
 
   <script>
+
     // Cognitive Clash "page": home.html?game=cognitive-clash loads stroop.js in place of the tiles.
+
     (function () {
+
       var game = new URLSearchParams(location.search).get("game");
+
       if (game !== "cognitive-clash") return;
+
       document.title = "Cognitive Clash | Brain Teasers";
+
       document.getElementById("tile-grid").style.display = "none";
+
       var root = document.createElement("div");
+
       root.id = "stroop-root";
+
       document.body.appendChild(root);
+
       var s = document.createElement("script");
+
       s.src = "stroop.js";
+
       document.body.appendChild(s);
+
     })();
+
   </script>
 
 </body>
+
 </html>

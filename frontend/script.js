@@ -39,15 +39,9 @@ let prefetched = null; // Promise for the NEXT question, fetched in the backgrou
 let requestId = 0; // invalidates in-flight loads when the game ends/restarts
 let retryTimer = null;
 
-// [ADDED] Reaction-time tracking (points logic is unchanged)
+// [ADDED] Reaction-time tracking (recorded silently, shown only on the results screen)
 let questionShownAt = 0; // performance.now() when the current question became visible
 let reactionTimes = []; // ms per correctly answered question
-
-// [ADDED] Live reaction display in the game screen (created from JS, no HTML change)
-const reactionLive = document.createElement("p");
-reactionLive.className = "flash good";
-reactionLive.id = "reaction-live";
-flashMsg.insertAdjacentElement("afterend", reactionLive);
 
 // [ADDED] Reaction summary in the results screen (created from JS, no HTML change)
 const reactionSummary = document.createElement("p");
@@ -157,11 +151,9 @@ function handleInput() {
   const typed = Number(raw);
 
   if (typed === currentAnswer) {
-    // [ADDED] Record reaction time for this correct answer
+    // [ADDED] Record reaction time for this correct answer (not displayed during the game)
     if (questionShownAt > 0) {
-      const rt = performance.now() - questionShownAt;
-      reactionTimes.push(rt);
-      reactionLive.textContent = `⚡ Reaction Time: ${Math.round(rt)} ms`;
+      reactionTimes.push(performance.now() - questionShownAt);
     }
 
     // Correct: auto-advance, no Enter needed.
@@ -193,7 +185,6 @@ function beginGame() {
   flashMsg.textContent = "";
   flashMsg.classList.remove("good");
   reactionTimes = []; // [ADDED]
-  reactionLive.textContent = ""; // [ADDED]
   reactionSummary.textContent = ""; // [ADDED]
   running = true;
   prefetched = null;
@@ -214,7 +205,7 @@ function endGame() {
   finalScore.textContent = `${score} points`;
   finalTime.textContent = `in ${gameDuration} seconds`;
 
-  // [ADDED] Show reaction-time stats alongside the points
+  // [ADDED] Show reaction-time stats alongside the points (results screen only)
   if (reactionTimes.length > 0) {
     const avg = reactionTimes.reduce((s, x) => s + x, 0) / reactionTimes.length;
     const fastest = Math.min(...reactionTimes);
