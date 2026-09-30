@@ -39,6 +39,22 @@ let prefetched = null; // Promise for the NEXT question, fetched in the backgrou
 let requestId = 0; // invalidates in-flight loads when the game ends/restarts
 let retryTimer = null;
 
+// [ADDED] Reaction-time tracking (points logic is unchanged)
+let questionShownAt = 0; // performance.now() when the current question became visible
+let reactionTimes = []; // ms per correctly answered question
+
+// [ADDED] Live reaction display in the game screen (created from JS, no HTML change)
+const reactionLive = document.createElement("p");
+reactionLive.className = "flash good";
+reactionLive.id = "reaction-live";
+flashMsg.insertAdjacentElement("afterend", reactionLive);
+
+// [ADDED] Reaction summary in the results screen (created from JS, no HTML change)
+const reactionSummary = document.createElement("p");
+reactionSummary.className = "subtitle";
+reactionSummary.id = "reaction-summary";
+finalTime.insertAdjacentElement("afterend", reactionSummary);
+
 function showScreen(name) {
   Object.values(screens).forEach((s) => s.classList.add("hidden"));
   screens[name].classList.remove("hidden");
@@ -64,6 +80,7 @@ async function loadQuestion() {
   const myId = ++requestId;
   clearTimeout(retryTimer);
   answerInput.disabled = true;
+  questionShownAt = 0; // [ADDED] no timing while a question is loading
 
   let data = null;
   if (prefetched) {
@@ -94,6 +111,13 @@ async function loadQuestion() {
   answerInput.value = "";
   answerInput.classList.remove("correct", "wrong");
   answerInput.focus();
+
+  // [ADDED] Start the reaction timer only after the question has been painted
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (running && myId === requestId) questionShownAt = performance.now();
+    })
+  );
 
   prefetchNext();
 }
@@ -133,6 +157,13 @@ function handleInput() {
   const typed = Number(raw);
 
   if (typed === currentAnswer) {
+    // [ADDED] Record reaction time for this correct answer
+    if (questionShownAt > 0) {
+      const rt = performance.now() - questionShownAt;
+      reactionTimes.push(rt);
+      reactionLive.textContent = `⚡ Reaction Time: ${Math.round(rt)} ms`;
+    }
+
     // Correct: auto-advance, no Enter needed.
     score += 1;
     scoreEl.textContent = `Score: ${score}`;
@@ -161,6 +192,9 @@ function beginGame() {
   scoreEl.textContent = "Score: 0";
   flashMsg.textContent = "";
   flashMsg.classList.remove("good");
+  reactionTimes = []; // [ADDED]
+  reactionLive.textContent = ""; // [ADDED]
+  reactionSummary.textContent = ""; // [ADDED]
   running = true;
   prefetched = null;
   timeRemaining = gameDuration;
@@ -179,6 +213,17 @@ function endGame() {
   answerInput.disabled = true;
   finalScore.textContent = `${score} points`;
   finalTime.textContent = `in ${gameDuration} seconds`;
+
+  // [ADDED] Show reaction-time stats alongside the points
+  if (reactionTimes.length > 0) {
+    const avg = reactionTimes.reduce((s, x) => s + x, 0) / reactionTimes.length;
+    const fastest = Math.min(...reactionTimes);
+    reactionSummary.textContent =
+      `⚡ Avg reaction: ${Math.round(avg)} ms · Fastest: ${Math.round(fastest)} ms`;
+  } else {
+    reactionSummary.textContent = "";
+  }
+
   showScreen("results");
 }
 
