@@ -1,10 +1,3 @@
-// In production, Nginx reverse-proxies /api/* on the same domain to the Flask
-// backend, so a relative path just works (no CORS). When you open the page from
-// localhost / 127.0.0.1 (local dev), talk to the Flask dev server on :5000
-// instead - set ALLOWED_ORIGINS=* in backend/.env for that.
-const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
-const API_BASE = IS_LOCAL && location.port !== "5000" ? "http://127.0.0.1:5000" : "";
-
 const el = (id) => document.getElementById(id);
 
 const screens = {
@@ -18,7 +11,6 @@ const startBtn = el("start-btn");
 const setupError = el("setup-error");
 
 const scoreEl = el("score");
-const timerEl = el("timer");
 const questionText = el("question-text");
 const answerInput = el("answer-input");
 const flashMsg = el("flash-msg");
@@ -35,200 +27,523 @@ let timeRemaining = 60;
 let timerInterval = null;
 let running = false;
 
-let prefetched = null; // Promise for the NEXT question, fetched in the background
-let requestId = 0; // invalidates in-flight loads when the game ends/restarts
-let retryTimer = null;
+// ============================================================
+// REACTION-TIME TRACKING
+// ============================================================
 
-// [ADDED] Reaction-time tracking (recorded silently, shown only on the results screen)
-let questionShownAt = 0; // performance.now() when the current question became visible
-let reactionTimes = []; // ms per correctly answered question
+let questionShownAt = 0;
+let reactionTimes = [];
 
-// [ADDED] Reaction summary in the results screen (created from JS, no HTML change)
+// Create reaction-time result dynamically
 const reactionSummary = document.createElement("p");
 reactionSummary.className = "subtitle";
 reactionSummary.id = "reaction-summary";
-finalTime.insertAdjacentElement("afterend", reactionSummary);
+
+finalTime.insertAdjacentElement(
+  "afterend",
+  reactionSummary
+);
+
+
+// ============================================================
+// SCREEN MANAGEMENT
+// ============================================================
 
 function showScreen(name) {
-  Object.values(screens).forEach((s) => s.classList.add("hidden"));
+  Object.values(screens).forEach((screen) => {
+    screen.classList.add("hidden");
+  });
+
   screens[name].classList.remove("hidden");
 }
 
-async function requestQuestion() {
-  const res = await fetch(`${API_BASE}/api/question`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  if (typeof data.answer !== "number" || typeof data.question !== "string") {
-    throw new Error("Malformed response");
+
+// ============================================================
+// LOCAL QUESTION GENERATOR
+// ============================================================
+// Completely independent.
+// No Flask.
+// No Gemini.
+// No API.
+// No internet.
+// ============================================================
+
+function generateQuestion() {
+
+  const operations = ["+", "-", "*"];
+
+  const operation =
+    operations[
+      Math.floor(Math.random() * operations.length)
+    ];
+
+  let num1;
+  let num2;
+  let answer;
+
+
+  // ADDITION
+  if (operation === "+") {
+
+    num1 =
+      Math.floor(Math.random() * 99) + 2;
+
+    num2 =
+      Math.floor(Math.random() * 99) + 2;
+
+    answer = num1 + num2;
   }
-  return data;
-}
 
-// Fetch the next question while the player is still solving the current one,
-// so there is no waiting between questions.
-function prefetchNext() {
-  prefetched = requestQuestion().catch(() => null);
-}
 
-async function loadQuestion() {
-  const myId = ++requestId;
-  clearTimeout(retryTimer);
-  answerInput.disabled = true;
-  questionShownAt = 0; // [ADDED] no timing while a question is loading
+  // SUBTRACTION
+  else if (operation === "-") {
 
-  let data = null;
-  if (prefetched) {
-    data = await prefetched;
-    prefetched = null;
-  }
-  if (!running || myId !== requestId) return;
+    num1 =
+      Math.floor(Math.random() * 99) + 2;
 
-  if (!data) {
-    questionText.textContent = "Loading...";
-    try {
-      data = await requestQuestion();
-    } catch (err) {
-      if (!running || myId !== requestId) return;
-      questionText.textContent = "Couldn't reach the server";
-      flashMsg.classList.remove("good");
-      flashMsg.textContent = "Retrying...";
-      retryTimer = setTimeout(loadQuestion, 1500);
-      return;
+    num2 =
+      Math.floor(Math.random() * 99) + 2;
+
+    // Prevent negative answers
+    if (num2 > num1) {
+      [num1, num2] = [num2, num1];
     }
-    if (!running || myId !== requestId) return;
+
+    answer = num1 - num2;
   }
 
-  currentAnswer = data.answer;
-  questionText.textContent = data.question;
-  if (flashMsg.textContent === "Retrying...") flashMsg.textContent = "";
-  answerInput.disabled = false;
-  answerInput.value = "";
-  answerInput.classList.remove("correct", "wrong");
-  answerInput.focus();
 
-  // [ADDED] Start the reaction timer only after the question has been painted
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      if (running && myId === requestId) questionShownAt = performance.now();
-    })
-  );
+  // MULTIPLICATION
+  else {
 
-  prefetchNext();
+    num1 =
+      Math.floor(Math.random() * 11) + 2;
+
+    num2 =
+      Math.floor(Math.random() * 11) + 2;
+
+    answer = num1 * num2;
+  }
+
+
+  return {
+    question:
+      operation === "*"
+        ? `${num1} × ${num2}`
+        : `${num1} ${operation} ${num2}`,
+
+    answer: answer,
+  };
 }
 
-function startTimer() {
-  const endAt = Date.now() + gameDuration * 1000;
-  timerEl.textContent = `${gameDuration.toFixed(1)}s`;
 
-  timerInterval = setInterval(() => {
-    timeRemaining = Math.max(0, (endAt - Date.now()) / 1000);
-    timerEl.textContent = `${timeRemaining.toFixed(1)}s`;
+// ============================================================
+// LOAD QUESTION
+// ============================================================
 
-    if (timeRemaining <= 0) {
-      endGame();
-    }
-  }, 100);
-}
+function loadQuestion() {
 
-function stopTimer() {
-  clearInterval(timerInterval);
-}
-
-function handleInput() {
-  if (!running || answerInput.disabled) return;
-
-  const raw = answerInput.value.trim();
-  if (raw === "") return;
-
-  if (!/^\d+$/.test(raw)) {
-    answerInput.classList.add("wrong");
-    answerInput.classList.remove("correct");
-    flashMsg.classList.remove("good");
-    flashMsg.textContent = "Digits only.";
+  if (!running) {
     return;
   }
+
+  const data = generateQuestion();
+
+  currentAnswer = data.answer;
+
+  questionText.textContent =
+    data.question;
+
+  flashMsg.textContent = "";
+
+  flashMsg.classList.remove("good");
+
+  answerInput.disabled = false;
+
+  answerInput.value = "";
+
+  answerInput.classList.remove(
+    "correct",
+    "wrong"
+  );
+
+  answerInput.focus();
+
+
+  // Start reaction timer AFTER the question
+  // has actually appeared on screen.
+
+  requestAnimationFrame(() => {
+
+    requestAnimationFrame(() => {
+
+      if (running) {
+
+        questionShownAt =
+          performance.now();
+
+      }
+
+    });
+
+  });
+}
+
+
+// ============================================================
+// INTERNAL GAME TIMER
+// ============================================================
+// The timer is invisible.
+// It only determines when the game ends.
+// ============================================================
+
+function startTimer() {
+
+  const endAt =
+    Date.now() +
+    gameDuration * 1000;
+
+
+  timerInterval =
+    setInterval(() => {
+
+      timeRemaining =
+        Math.max(
+          0,
+          (endAt - Date.now()) / 1000
+        );
+
+
+      if (timeRemaining <= 0) {
+        endGame();
+      }
+
+    }, 100);
+}
+
+
+function stopTimer() {
+
+  clearInterval(timerInterval);
+
+  timerInterval = null;
+}
+
+
+// ============================================================
+// INPUT HANDLING
+// ============================================================
+
+function handleInput() {
+
+  if (
+    !running ||
+    answerInput.disabled
+  ) {
+    return;
+  }
+
+  const raw =
+    answerInput.value.trim();
+
+
+  if (raw === "") {
+    return;
+  }
+
+
+  // Only numbers
+  if (!/^\d+$/.test(raw)) {
+
+    answerInput.classList.add("wrong");
+
+    answerInput.classList.remove("correct");
+
+    flashMsg.classList.remove("good");
+
+    flashMsg.textContent =
+      "Digits only.";
+
+    return;
+  }
+
 
   const typed = Number(raw);
 
+
+  // ==========================================================
+  // CORRECT ANSWER
+  // ==========================================================
+
   if (typed === currentAnswer) {
-    // [ADDED] Record reaction time for this correct answer (not displayed during the game)
+
+    // Calculate reaction time for this question
     if (questionShownAt > 0) {
-      reactionTimes.push(performance.now() - questionShownAt);
+
+      const reactionTime =
+        performance.now() -
+        questionShownAt;
+
+      reactionTimes.push(
+        reactionTime
+      );
     }
 
-    // Correct: auto-advance, no Enter needed.
+
     score += 1;
-    scoreEl.textContent = `Score: ${score}`;
-    answerInput.classList.remove("wrong");
-    answerInput.classList.add("correct");
-    flashMsg.textContent = "Correct!";
-    flashMsg.classList.add("good");
+
+    scoreEl.textContent =
+      `Score: ${score}`;
+
+
+    answerInput.classList.remove(
+      "wrong"
+    );
+
+    answerInput.classList.add(
+      "correct"
+    );
+
+
+    flashMsg.textContent =
+      "Correct!";
+
+    flashMsg.classList.add(
+      "good"
+    );
+
+
+    // Immediately show next question
     loadQuestion();
+
     return;
   }
 
-  // Wrong so far: only flag it once they've typed as many digits as the
-  // answer has (so we don't flash red while they're mid-way through typing).
-  if (raw.length >= String(currentAnswer).length) {
-    answerInput.classList.add("wrong");
-    answerInput.classList.remove("correct");
-    flashMsg.textContent = "Not quite - keep trying.";
-    flashMsg.classList.remove("good");
+
+  // ==========================================================
+  // WRONG ANSWER
+  // ==========================================================
+
+  if (
+    raw.length >=
+    String(currentAnswer).length
+  ) {
+
+    answerInput.classList.add(
+      "wrong"
+    );
+
+    answerInput.classList.remove(
+      "correct"
+    );
+
+    flashMsg.textContent =
+      "Not quite - keep trying.";
+
+    flashMsg.classList.remove(
+      "good"
+    );
+
   } else {
-    answerInput.classList.remove("wrong");
+
+    answerInput.classList.remove(
+      "wrong"
+    );
+
   }
 }
 
+
+// ============================================================
+// START GAME
+// ============================================================
+
 function beginGame() {
+
   score = 0;
-  scoreEl.textContent = "Score: 0";
+
+  scoreEl.textContent =
+    "Score: 0";
+
   flashMsg.textContent = "";
-  flashMsg.classList.remove("good");
-  reactionTimes = []; // [ADDED]
-  reactionSummary.textContent = ""; // [ADDED]
+
+  flashMsg.classList.remove(
+    "good"
+  );
+
+
+  // Clear previous reaction times
+  reactionTimes = [];
+
+  reactionSummary.textContent = "";
+
+
   running = true;
-  prefetched = null;
-  timeRemaining = gameDuration;
+
+  timeRemaining =
+    gameDuration;
+
+
   showScreen("game");
+
+
+  // Start invisible timer
   startTimer();
+
+
+  // Generate first question
   loadQuestion();
 }
 
-function endGame() {
-  if (!running) return; // avoid double-firing (manual Stop + timer hitting 0)
-  running = false;
-  requestId++; // cancel any in-flight question load
-  clearTimeout(retryTimer);
-  prefetched = null;
-  stopTimer();
-  answerInput.disabled = true;
-  finalScore.textContent = `${score} points`;
-  finalTime.textContent = `in ${gameDuration} seconds`;
 
-  // [ADDED] Show reaction-time stats alongside the points (results screen only)
-  if (reactionTimes.length > 0) {
-    const avg = reactionTimes.reduce((s, x) => s + x, 0) / reactionTimes.length;
-    const fastest = Math.min(...reactionTimes);
-    reactionSummary.textContent =
-      `⚡ Avg reaction: ${Math.round(avg)} ms · Fastest: ${Math.round(fastest)} ms`;
-  } else {
-    reactionSummary.textContent = "";
+// ============================================================
+// END GAME
+// ============================================================
+
+function endGame() {
+
+  if (!running) {
+    return;
   }
+
+
+  running = false;
+
+
+  stopTimer();
+
+
+  answerInput.disabled = true;
+
+
+  // Final score
+  finalScore.textContent =
+    `${score} points`;
+
+
+  finalTime.textContent =
+    `in ${gameDuration} seconds`;
+
+
+  // ==========================================================
+  // REACTION-TIME RESULTS
+  // ==========================================================
+
+  if (reactionTimes.length > 0) {
+
+    const totalReactionTime =
+      reactionTimes.reduce(
+        (sum, value) =>
+          sum + value,
+        0
+      );
+
+
+    const average =
+      totalReactionTime /
+      reactionTimes.length;
+
+
+    const fastest =
+      Math.min(
+        ...reactionTimes
+      );
+
+
+    reactionSummary.textContent =
+      `⚡ Avg reaction: ` +
+      `${Math.round(average)} ms · ` +
+      `Fastest: ` +
+      `${Math.round(fastest)} ms`;
+
+  } else {
+
+    reactionSummary.textContent =
+      "⚡ No completed questions to measure reaction time.";
+
+  }
+
+
+  // Reset timing value AFTER calculating results
+  questionShownAt = 0;
+
 
   showScreen("results");
 }
 
-startBtn.addEventListener("click", () => {
-  const seconds = parseInt(durationInput.value, 10);
-  if (isNaN(seconds) || seconds < 10 || seconds > 600) {
-    setupError.textContent = "Enter a duration between 10 and 600 seconds.";
-    return;
-  }
-  setupError.textContent = "";
-  gameDuration = seconds;
-  beginGame();
-});
 
-answerInput.addEventListener("input", handleInput);
-stopBtn.addEventListener("click", endGame);
-restartBtn.addEventListener("click", () => showScreen("setup"));
+// ============================================================
+// START BUTTON
+// ============================================================
+
+startBtn.addEventListener(
+  "click",
+  () => {
+
+    const seconds =
+      parseInt(
+        durationInput.value,
+        10
+      );
+
+
+    if (
+      isNaN(seconds) ||
+      seconds < 10 ||
+      seconds > 600
+    ) {
+
+      setupError.textContent =
+        "Enter a duration between 10 and 600 seconds.";
+
+      return;
+    }
+
+
+    setupError.textContent = "";
+
+    gameDuration =
+      seconds;
+
+
+    beginGame();
+  }
+);
+
+
+// ============================================================
+// EVENTS
+// ============================================================
+
+answerInput.addEventListener(
+  "input",
+  handleInput
+);
+
+
+stopBtn.addEventListener(
+  "click",
+  endGame
+);
+
+
+restartBtn.addEventListener(
+  "click",
+  () => {
+
+    showScreen("setup");
+
+    answerInput.value = "";
+
+    flashMsg.textContent = "";
+
+    flashMsg.classList.remove(
+      "good"
+    );
+
+    reactionSummary.textContent = "";
+
+    questionShownAt = 0;
+
+  }
+);
