@@ -1,120 +1,420 @@
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<meta charset="UTF-8">
+    <title>Brain Teasers</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root {
+            --bg: #000000;
+            --tile: #1a1a1a;
+            --tile-hover: #262626;
+            --text: #f2f2f2;
+            --muted: #8a8a8a;
+            --border: #2c2c2c;
+        }
 
-<title>Brain Teasers</title>
+        * {
+            box-sizing: border-box;
+        }
 
-<style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                Roboto,
+                sans-serif;
+        }
 
-  :root {
-    --bg: #000000;
-    --tile: #1a1a1a;
-    --tile-hover: #262626;
-    --text: #f2f2f2;
-    --muted: #8a8a8a;
-    --border: #2c2c2c;
-  }
+        /* ================================
+           GAME MENU
+           ================================ */
 
-  * { box-sizing: border-box; }
+        .tile-grid {
+            display: grid;
 
-  body {
-    margin: 0;
-    min-height: 100vh;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
+            grid-template-columns:
+                repeat(auto-fill, minmax(200px, 1fr));
 
-  /* Grid of game tiles. Add more <a class="tile"> items here later —
-     three fit per row on a normal-width screen, and it wraps automatically. */
+            gap: 20px;
 
-  .tile-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 20px;
-    max-width: 700px;
-    margin: 40px 0;
-    padding: 0 24px;
-    justify-content: start;
-  }
+            max-width: 700px;
 
-  a.tile {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    aspect-ratio: 1 / 1;
-    background: var(--tile);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    color: var(--text);
-    text-decoration: none;
-    font-size: 22px;
-    font-weight: 700;
-    text-align: center;
-    padding: 16px;
-    transition: background 0.15s ease, transform 0.1s ease;
-  }
+            margin: 40px 0;
 
-  a.tile:hover {
-    background: var(--tile-hover);
-    transform: translateY(-2px);
-  }
+            padding: 0 24px;
 
-  a.tile:active {
-    transform: translateY(0);
-  }
+            justify-content: start;
+        }
 
-</style>
+        a.tile {
+            display: flex;
 
+            align-items: center;
+            justify-content: center;
+
+            aspect-ratio: 1 / 1;
+
+            background: var(--tile);
+
+            border: 1px solid var(--border);
+
+            border-radius: 14px;
+
+            color: var(--text);
+
+            text-decoration: none;
+
+            font-size: 22px;
+
+            font-weight: 700;
+
+            text-align: center;
+
+            padding: 16px;
+
+            transition:
+                background 0.15s ease,
+                transform 0.1s ease,
+                border-color 0.15s ease;
+        }
+
+        a.tile:hover {
+            background: var(--tile-hover);
+
+            transform: translateY(-2px);
+
+            border-color: #3a3a3a;
+        }
+
+        a.tile:active {
+            transform: translateY(0);
+        }
+
+
+        /* ================================
+           RESPONSIVE
+           ================================ */
+
+        @media (max-width: 600px) {
+
+            .tile-grid {
+                grid-template-columns:
+                    repeat(2, minmax(140px, 1fr));
+
+                gap: 14px;
+
+                padding: 0 16px;
+
+                margin-top: 24px;
+            }
+
+            a.tile {
+                font-size: 18px;
+            }
+        }
+    </style>
 </head>
+
 
 <body>
 
-  <div class="tile-grid" id="tile-grid">
+    <!-- ==========================================
+         GAME MENU
+         ========================================== -->
 
-    <!-- Same-tab navigation (no target="_blank"). Copy this <a> block to add more games later. -->
+    <div
+        class="tile-grid"
+        id="tile-grid"
+    >
 
-   <a class="tile" href="index.html">Speed Math</a>
+        <!-- SPEED MATH -->
+        <a
+            class="tile"
+            href="index.html"
+        >
+            ⚡ Speed Math
+        </a>
 
-<a class="tile" href="home.html?game=cognitive-clash">Cognitive Clash</a>
 
-  </div>
+        <!-- COGNITIVE CLASH -->
+        <a
+            class="tile"
+            href="home.html?game=cognitive-clash"
+        >
+            🎨 Cognitive Clash
+        </a>
 
-  <script>
 
-    // Cognitive Clash "page": home.html?game=cognitive-clash loads stroop.js in place of the tiles.
+        <!-- MEMORY GRID -->
+        <a
+            class="tile"
+            href="home.html?game=memory-grid"
+        >
+            🧠 Memory Grid
+        </a>
 
-    (function () {
+    </div>
 
-      var game = new URLSearchParams(location.search).get("game");
 
-      if (game !== "cognitive-clash") return;
+    <!-- ==========================================
+         GAME LOADER
+         ========================================== -->
 
-      document.title = "Cognitive Clash | Brain Teasers";
+    <script>
 
-      document.getElementById("tile-grid").style.display = "none";
+        (function () {
 
-      var root = document.createElement("div");
+            /*
+             * Read the game from the URL.
+             *
+             * Example:
+             *
+             * home.html?game=cognitive-clash
+             *
+             * home.html?game=memory-grid
+             */
 
-      root.id = "stroop-root";
+            var game =
+                new URLSearchParams(
+                    window.location.search
+                ).get("game");
 
-      document.body.appendChild(root);
 
-      var s = document.createElement("script");
+            /*
+             * No game selected.
+             *
+             * Keep the normal game menu.
+             */
 
-      s.src = "stroop.js";
+            if (!game) {
+                return;
+            }
 
-      document.body.appendChild(s);
 
-    })();
+            /*
+             * Hide the game menu.
+             */
 
-  </script>
+            var menu =
+                document.getElementById(
+                    "tile-grid"
+                );
+
+            if (menu) {
+                menu.style.display = "none";
+            }
+
+
+            /*
+             * ======================================
+             * COGNITIVE CLASH
+             * ======================================
+             *
+             * IMPORTANT:
+             *
+             * Your existing stroop.js expects
+             * the container:
+             *
+             *     #stroop-root
+             *
+             * So we create that exact container.
+             *
+             * We are NOT changing stroop.js.
+             */
+
+            if (game === "cognitive-clash") {
+
+                document.title =
+                    "Cognitive Clash | Brain Teasers";
+
+
+                var stroopRoot =
+                    document.createElement(
+                        "div"
+                    );
+
+
+                stroopRoot.id =
+                    "stroop-root";
+
+
+                document.body.appendChild(
+                    stroopRoot
+                );
+
+
+                var stroopScript =
+                    document.createElement(
+                        "script"
+                    );
+
+
+                stroopScript.src =
+                    "stroop.js";
+
+
+                /*
+                 * If stroop.js cannot load,
+                 * show an error instead of
+                 * a completely blank page.
+                 */
+
+                stroopScript.onerror =
+                    function () {
+
+                        showLoadError(
+                            "stroop.js"
+                        );
+
+                    };
+
+
+                document.body.appendChild(
+                    stroopScript
+                );
+
+
+                return;
+            }
+
+
+            /*
+             * ======================================
+             * MEMORY GRID
+             * ======================================
+             */
+
+            if (game === "memory-grid") {
+
+                document.title =
+                    "Memory Grid | Brain Teasers";
+
+
+                var memoryRoot =
+                    document.createElement(
+                        "div"
+                    );
+
+
+                memoryRoot.id =
+                    "game-root";
+
+
+                document.body.appendChild(
+                    memoryRoot
+                );
+
+
+                var memoryScript =
+                    document.createElement(
+                        "script"
+                    );
+
+
+                memoryScript.src =
+                    "memorygrid.js";
+
+
+                memoryScript.onerror =
+                    function () {
+
+                        showLoadError(
+                            "memorygrid.js"
+                        );
+
+                    };
+
+
+                document.body.appendChild(
+                    memoryScript
+                );
+
+
+                return;
+            }
+
+
+            /*
+             * ======================================
+             * UNKNOWN GAME
+             * ======================================
+             */
+
+            window.location.href =
+                "home.html";
+
+
+            /*
+             * ======================================
+             * ERROR SCREEN
+             * ======================================
+             */
+
+            function showLoadError(
+                fileName
+            ) {
+
+                document.body.innerHTML = `
+
+                    <div style="
+                        min-height:100vh;
+                        background:#000;
+                        color:#f2f2f2;
+
+                        display:flex;
+                        align-items:center;
+                        justify-content:center;
+
+                        text-align:center;
+
+                        padding:30px;
+
+                        font-family:system-ui;
+                    ">
+
+                        <div>
+
+                            <h2>
+                                Game could not be loaded
+                            </h2>
+
+                            <p>
+                                Make sure
+                                <strong>
+                                    ${fileName}
+                                </strong>
+                                is in the same folder
+                                as home.html.
+                            </p>
+
+                            <a
+                                href="home.html"
+                                style="
+                                    color:#f2f2f2;
+                                "
+                            >
+                                ← Back to Games
+                            </a>
+
+                        </div>
+
+                    </div>
+
+                `;
+            }
+
+        })();
+
+    </script>
 
 </body>
 
